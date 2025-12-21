@@ -2,9 +2,10 @@ import tkinter as tk
 from tkinter import messagebox, scrolledtext
 import random
 import binascii
+import string
 
 # =============================================================================
-# CẤU HÌNH AES (LOOKUP TABLES)
+# CẤU HÌNH AES (GIỮ NGUYÊN)
 # =============================================================================
 S_BOX = (
     0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
@@ -62,6 +63,9 @@ def gmul(a, b):
         b >>= 1
     return p
 
+# =============================================================================
+# LỚP XỬ LÝ AES (GIỮ NGUYÊN)
+# =============================================================================
 class AESCipher:
     def __init__(self, key):
         self.key = key
@@ -77,7 +81,7 @@ class AESCipher:
             self.n_rounds = 14
             self.nk = 8
         else:
-            raise ValueError("Độ dài khóa không hợp lệ! Chỉ hỗ trợ 16, 24 hoặc 32 ký tự.")
+            raise ValueError(f"Độ dài khóa ({k_len} bytes) không hợp lệ! AES chỉ hỗ trợ 16, 24 hoặc 32 bytes.")
             
         self.round_keys = self._key_expansion(key)
 
@@ -178,20 +182,49 @@ class AESCipher:
                 output.append(state[r][c])
         return bytes(output)
 
-# --- PADDING ---
+# =============================================================================
+# CÁC HÀM HỖ TRỢ (FIXED)
+# =============================================================================
+
 def pad_pkcs7(data):
     pad_len = 16 - (len(data) % 16)
     return data + bytes([pad_len] * pad_len)
 
 def unpad_pkcs7(data):
+    if not data: return data
     pad_len = data[-1]
+    if pad_len < 1 or pad_len > 16:
+        return data # Trả về raw nếu padding sai
+    # Kiểm tra tính toàn vẹn của padding
+    if data[-pad_len:] != bytes([pad_len] * pad_len):
+        return data 
     return data[:-pad_len]
 
-# --- GUI APP ---
+def smart_parse_input(text):
+    """
+    Tự động nhận diện Hex hay Text.
+    - Nếu là chuỗi Hex hợp lệ có độ dài khớp với Key (32/48/64 chars) hoặc IV (32 chars) -> Convert sang bytes.
+    - Ngược lại -> Encode UTF-8.
+    """
+    text = text.strip()
+    # Kiểm tra Hex
+    if all(c in string.hexdigits for c in text):
+        # AES-128 (16 byte -> 32 hex), AES-192 (24->48), AES-256 (32->64), IV (16->32)
+        if len(text) in [32, 48, 64]:
+            try:
+                return bytes.fromhex(text)
+            except: pass
+    
+    # Mặc định là Text
+    return text.encode('utf-8')
+
+# =============================================================================
+# GIAO DIỆN APP (FIXED LOGIC)
+# =============================================================================
 class AESApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Lab06 - Task 5: AES")
+        self.root.title("Lab06 - Task 5: AES (Robust)")
         self.root.geometry("750x650")
         
         tk.Label(root, text="AES ENCRYPTION/DECRYPTION", 
@@ -200,11 +233,11 @@ class AESApp:
         frame_cf = tk.Frame(root)
         frame_cf.pack(fill="x", padx=20)
         
-        tk.Label(frame_cf, text="Key (16, 24, 32 chars):").grid(row=0, column=0, sticky="w")
+        tk.Label(frame_cf, text="Key (Hex/Text):").grid(row=0, column=0, sticky="w")
         self.ent_key = tk.Entry(frame_cf, width=22)
         self.ent_key.grid(row=0, column=1, padx=5)
         
-        tk.Label(frame_cf, text="IV (16 chars, Opt):").grid(row=0, column=2, sticky="w")
+        tk.Label(frame_cf, text="IV (Hex/Text):").grid(row=0, column=2, sticky="w")
         self.ent_iv = tk.Entry(frame_cf, width=20)
         self.ent_iv.grid(row=0, column=3, padx=5)
         
@@ -226,15 +259,19 @@ class AESApp:
         self.txt_out.pack(fill="x", padx=20, pady=5)
 
     def get_params(self):
-        key = self.ent_key.get().encode('utf-8')
-        iv = self.ent_iv.get().encode('utf-8')
+        raw_key = self.ent_key.get()
+        raw_iv = self.ent_iv.get()
         mode = self.mode_var.get()
         
-        # Cho phép 3 độ dài khóa
+        # --- FIX 1: Dùng smart parsing cho Key/IV ---
+        key = smart_parse_input(raw_key)
+        iv = smart_parse_input(raw_iv) if raw_iv else b''
+        
         if len(key) not in [16, 24, 32]:
             messagebox.showerror("Lỗi độ dài Key", 
-                                 f"Độ dài Key hiện tại: {len(key)} ký tự.\n"
-                                 "Vui lòng nhập đúng 16 (AES-128), 24 (AES-192) hoặc 32 (AES-256) ký tự.")
+                                 f"Key hiện tại dài {len(key)} bytes.\n"
+                                 "Vui lòng nhập đúng 16 (AES-128), 24 (AES-192) hoặc 32 (AES-256) bytes.\n"
+                                 "(Gợi ý: Nếu nhập Hex 32 ký tự -> sẽ là 16 bytes)")
             return None
         return key, iv, mode
 
@@ -244,7 +281,7 @@ class AESApp:
         key, iv, mode = p
         
         try:
-            aes = AESCipher(key) # Tự động phát hiện phiên bản AES
+            aes = AESCipher(key)
             plaintext = self.txt_in.get("1.0", tk.END).strip().encode('utf-8')
             padded = pad_pkcs7(plaintext)
             ciphertext = b""
@@ -256,9 +293,10 @@ class AESApp:
             
             elif mode == "CBC":
                 if len(iv) != 16:
+                    # Tự sinh IV nếu thiếu hoặc độ dài sai (khi người dùng nhập bừa)
                     iv = bytes([random.randint(0, 255) for _ in range(16)])
                     self.ent_iv.delete(0, tk.END)
-                    self.ent_iv.insert(0, iv.decode('latin-1', 'ignore'))
+                    self.ent_iv.insert(0, binascii.hexlify(iv).decode())
                 
                 curr_vec = iv
                 for i in range(0, len(padded), 16):
@@ -269,7 +307,6 @@ class AESApp:
                     curr_vec = enc
             
             hex_out = binascii.hexlify(ciphertext).decode()
-            # CHỈ HIỂN THỊ CIPHERTEXT
             self.txt_out.delete(1.0, tk.END)
             self.txt_out.insert(tk.END, hex_out)
                 
@@ -282,9 +319,9 @@ class AESApp:
         key, iv, mode = p
         
         try:
-            # Lấy input là chuỗi Hex thuần
-            inp = self.txt_in.get("1.0", tk.END).strip()
-            ciphertext = binascii.unhexlify(inp)
+            # --- FIX 2: Làm sạch input (xóa \n, space) ---
+            inp_str = self.txt_in.get("1.0", tk.END).replace('\n', '').replace(' ', '').strip()
+            ciphertext = binascii.unhexlify(inp_str)
                 
             aes = AESCipher(key)
             decrypted = b""
@@ -292,26 +329,37 @@ class AESApp:
             if mode == "ECB":
                 for i in range(0, len(ciphertext), 16):
                     block = ciphertext[i:i+16]
-                    decrypted += aes.decrypt_block(block)
+                    if len(block) == 16: # Chỉ xử lý block đủ
+                        decrypted += aes.decrypt_block(block)
                     
             elif mode == "CBC":
                 if len(iv) != 16:
-                    messagebox.showerror("Lỗi", "Mode CBC cần IV 16 byte! Vui lòng kiểm tra ô IV.")
+                    messagebox.showerror("Lỗi", "Mode CBC cần IV 16 byte (32 hex chars)!")
                     return
                 prev = iv
                 for i in range(0, len(ciphertext), 16):
                     curr = ciphertext[i:i+16]
-                    dec = aes.decrypt_block(curr)
-                    plain = bytes([b ^ v for b, v in zip(dec, prev)])
-                    decrypted += plain
-                    prev = curr
+                    if len(curr) == 16:
+                        dec = aes.decrypt_block(curr)
+                        plain = bytes([b ^ v for b, v in zip(dec, prev)])
+                        decrypted += plain
+                        prev = curr
             
-            plaintext = unpad_pkcs7(decrypted).decode('utf-8')
+            # --- FIX 3: Xử lý hiển thị an toàn ---
+            final_data = unpad_pkcs7(decrypted)
             self.txt_out.delete(1.0, tk.END)
-            self.txt_out.insert(tk.END, plaintext)
+            
+            try:
+                plaintext = final_data.decode('utf-8')
+                self.txt_out.insert(tk.END, plaintext)
+            except UnicodeDecodeError:
+                # Nếu decode lỗi (do sai Key), hiện Hex để người dùng biết
+                msg = "Cảnh báo: Không thể decode UTF-8 (Có thể sai Key/IV).\nRaw Hex:\n"
+                msg += binascii.hexlify(final_data).decode()
+                self.txt_out.insert(tk.END, msg)
             
         except Exception as e:
-            messagebox.showerror("Lỗi Giải mã", f"Lỗi (Padding/Key/IV sai).\n{str(e)}")
+            messagebox.showerror("Lỗi Giải mã", f"Lỗi: {str(e)}")
 
 if __name__ == "__main__":
     root = tk.Tk()

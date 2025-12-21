@@ -38,7 +38,7 @@ class CaesarCipherApp:
         self.best_key = -1
         self.best_plaintext = ""
 
-    #  LOGIC XỬ LÝ (ALGORITHM)
+    #  LOGIC XỬ LÝ 
 
     def decrypt_caesar(self, text, key):
         """
@@ -48,15 +48,12 @@ class CaesarCipherApp:
         result = []
         for char in text:
             if 'A' <= char <= 'Z':
-                # Dịch ngược lại k bước: (char - k)
-                # Công thức giải mã: D(x) = (x - k) mod 26
                 decoded_char = chr((ord(char) - 65 - key) % 26 + 65)
                 result.append(decoded_char)
             elif 'a' <= char <= 'z':
                 decoded_char = chr((ord(char) - 97 - key) % 26 + 97)
                 result.append(decoded_char)
             else:
-                # Giữ nguyên khoảng trắng và dấu câu 
                 result.append(char)
         return "".join(result)
 
@@ -80,7 +77,6 @@ class CaesarCipherApp:
         if filepath:
             self.lbl_input_path.config(text=os.path.basename(filepath), fg="black")
             try:
-                # Đọc file định dạng UTF-8 [cite: 19]
                 with open(filepath, "r", encoding="utf-8") as f:
                     self.ciphertext_content = f.read()
                 messagebox.showinfo("Thành công", "Đã tải nội dung ciphertext.")
@@ -96,11 +92,8 @@ class CaesarCipherApp:
         self.best_key = 0
         self.best_plaintext = ""
 
-        # Thử tất cả khóa khả dĩ từ 0 đến 25 
-        # Vì đề bài yêu cầu tìm "plaintext duy nhất", ta dùng heuristic chấm điểm
         for key in range(26):
             temp_text = self.decrypt_caesar(self.ciphertext_content, key)
-            # Chỉ lấy 2000 ký tự đầu để chấm điểm cho nhanh
             score = self.calculate_score(temp_text[:2000]) 
             
             if score > best_score:

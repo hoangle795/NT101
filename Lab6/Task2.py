@@ -60,7 +60,7 @@ class Task2CleanApp:
         self.best_text = ""
         self.best_score = -float('inf')
 
-    # 1. TẠO KHÓA -
+    # 1. TẠO KHÓA 
     def get_freq_seed(self, text):
         chars = [c for c in text if c.isalpha()]
         if not chars: return self.get_random_map()
